@@ -80,9 +80,10 @@ async def fetch_dogecoin_news():
     try:
         logger.info("Fetching news from NewsData.io")
         
+        # Use a more specific query for Dogecoin cryptocurrency
         url = (f"https://newsdata.io/api/1/news?"
                f"apikey={NEWSDATA_API_KEY}"
-               f"&q=Dogecoin OR DOGE"  # Include both terms
+               f"&q=Dogecoin cryptocurrency OR DOGE coin OR DOGE crypto"  # More specific terms
                f"&language=en")
         
         logger.info(f"Making request to: {url}")
@@ -91,6 +92,7 @@ async def fetch_dogecoin_news():
             async with session.get(url) as response:
                 response_text = await response.text()
                 logger.info(f"Response status: {response.status}")
+                logger.info(f"Response text: {response_text[:500]}")  # Log first 500 chars of response
                 
                 if response.status != 200:
                     logger.error(f"NewsData.io API error: Status {response.status}")
@@ -113,6 +115,7 @@ async def fetch_dogecoin_news():
                     return []
                 
                 filtered_articles = []
+                crypto_keywords = {'crypto', 'cryptocurrency', 'bitcoin', 'blockchain', 'trading', 'price', 'market', 'coin'}
                 
                 for article in results:
                     if not isinstance(article, dict):
@@ -129,10 +132,15 @@ async def fetch_dogecoin_news():
                     # Convert to lowercase only for comparison
                     title_lower = title.lower()
                     description_lower = description.lower() if description else ''
+                    content = f"{title_lower} {description_lower}"
                     
-                    # Check if the article mentions Dogecoin or DOGE
-                    if ('dogecoin' in title_lower or 'dogecoin' in description_lower or
-                        'doge' in title_lower or 'doge' in description_lower):
+                    # Check if it's specifically about Dogecoin cryptocurrency
+                    is_about_doge = (
+                        'dogecoin' in content or
+                        ('doge' in content and any(kw in content for kw in crypto_keywords))
+                    )
+                    
+                    if is_about_doge:
                         filtered_articles.append(article)
                         logger.info(f"Found relevant article: {title}")
                 
