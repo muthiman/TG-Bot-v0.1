@@ -16,7 +16,7 @@ NEWSDATA_API_KEY = os.getenv('NEWSDATA_API_KEY', "pub_747026d7148da05676417a4f83
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.DEBUG
 )
 logger = logging.getLogger(__name__)
 
@@ -248,20 +248,27 @@ def price_command(update: Update, context: CallbackContext) -> None:
 def send_news(update: Update, context: CallbackContext) -> None:
     """Send latest Dogecoin news when the command /news is issued."""
     try:
-        logger.info(f"News command received from user {update.effective_user.id}")
+        logger.debug(f"Starting news command for user {update.effective_user.id}")
         update.message.reply_text("🔍 Fetching latest Dogecoin news...")
         
         # First send price update
+        logger.debug("Fetching price data...")
         price_data = asyncio.run(get_dogecoin_price())
         if price_data:
-            update.message.reply_text(
-                format_price_message(price_data),
-                parse_mode='Markdown'
-            )
+            logger.debug(f"Price data received: {price_data}")
+            try:
+                update.message.reply_text(
+                    format_price_message(price_data),
+                    parse_mode='Markdown'
+                )
+                logger.debug("Price message sent successfully")
+            except Exception as e:
+                logger.error(f"Failed to send price message: {str(e)}")
         
         # Then send news
+        logger.debug("Fetching news articles...")
         articles = asyncio.run(fetch_dogecoin_news())
-        logger.info(f"Fetched {len(articles)} articles")
+        logger.debug(f"Fetched {len(articles)} articles")
         
         if not articles:
             logger.error("No articles found in the API response")
@@ -271,14 +278,19 @@ def send_news(update: Update, context: CallbackContext) -> None:
             return
 
         # Log the articles we're about to send
-        logger.info("Articles to be sent:")
+        logger.debug("Articles to be sent:")
         for idx, article in enumerate(articles[:5]):
-            logger.info(f"Article {idx + 1}: {article.get('title')} - {article.get('link')}")
+            logger.debug(f"Article {idx + 1}:")
+            logger.debug(f"  Title: {article.get('title')}")
+            logger.debug(f"  Link: {article.get('link')}")
+            logger.debug(f"  Description: {article.get('description')}")
 
         # Send up to 5 most recent news items
         sent_count = 0
         for article in articles[:5]:
             try:
+                logger.debug(f"Preparing to send article: {article.get('title')}")
+                
                 # First try with Markdown formatting
                 title = article.get('title', '').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
                 description = article.get('description', 'No description available.')
@@ -294,6 +306,7 @@ def send_news(update: Update, context: CallbackContext) -> None:
                     f"📅 Published: {pub_date}"
                 )
                 
+                logger.debug(f"Attempting to send message with Markdown:\n{message}")
                 try:
                     sent = update.message.reply_text(
                         message,
@@ -302,9 +315,9 @@ def send_news(update: Update, context: CallbackContext) -> None:
                     )
                     if sent:
                         sent_count += 1
-                        logger.info(f"Successfully sent article {sent_count}")
+                        logger.debug(f"Successfully sent article {sent_count} with Markdown")
                 except Exception as md_error:
-                    logger.error(f"Failed to send with Markdown: {md_error}")
+                    logger.error(f"Failed to send with Markdown: {str(md_error)}")
                     # If Markdown fails, send without formatting
                     simple_message = (
                         f"📰 {article.get('title', '')}\n\n"
@@ -312,15 +325,16 @@ def send_news(update: Update, context: CallbackContext) -> None:
                         f"🔗 {article.get('link', '')}\n"
                         f"📅 Published: {article.get('pubDate', 'Date not available')}"
                     )
+                    logger.debug(f"Attempting to send message without formatting:\n{simple_message}")
                     sent = update.message.reply_text(
                         simple_message,
                         disable_web_page_preview=True
                     )
                     if sent:
                         sent_count += 1
-                        logger.info(f"Successfully sent article {sent_count} without formatting")
+                        logger.debug(f"Successfully sent article {sent_count} without formatting")
             except Exception as e:
-                logger.error(f"Error sending news article: {e}")
+                logger.error(f"Error sending news article: {str(e)}")
                 continue
         
         if sent_count > 0:
