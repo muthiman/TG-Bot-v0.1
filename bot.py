@@ -266,9 +266,11 @@ def send_news(update: Update, context: CallbackContext) -> None:
         for article in articles[:5]:
             try:
                 # Format the message with proper escaping for Markdown
-                title = article.get('title', '').replace('[', '\\[').replace('*', '\\*').replace('_', '\\_')
-                description = article.get('description', 'No description available.').replace('[', '\\[').replace('*', '\\*').replace('_', '\\_')
-                link = article.get('link', '')
+                title = article.get('title', '').replace('[', '\\[').replace(']', '\\]').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+                description = article.get('description', 'No description available.')
+                if description:
+                    description = description.replace('[', '\\[').replace(']', '\\]').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+                link = article.get('link', '').replace(')', '\\)').replace('(', '\\(')
                 pub_date = article.get('pubDate', 'Date not available')
                 
                 message = (
@@ -286,6 +288,21 @@ def send_news(update: Update, context: CallbackContext) -> None:
                 logger.info(f"Sent article: {title}")
             except Exception as e:
                 logger.error(f"Error sending news article: {e}")
+                # If Markdown parsing fails, try sending without formatting
+                try:
+                    simple_message = (
+                        f"📰 {article.get('title', '')}\n\n"
+                        f"{article.get('description', 'No description available.')}\n\n"
+                        f"🔗 {article.get('link', '')}\n"
+                        f"📅 Published: {article.get('pubDate', 'Date not available')}"
+                    )
+                    update.message.reply_text(
+                        simple_message,
+                        disable_web_page_preview=True
+                    )
+                    logger.info(f"Sent article without formatting: {article.get('title', '')}")
+                except Exception as e2:
+                    logger.error(f"Error sending unformatted article: {e2}")
                 continue
         
         logger.info(f"News sent to user {update.effective_user.id}")
