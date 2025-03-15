@@ -90,26 +90,53 @@ async def fetch_dogecoin_news():
         
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
-                data = await response.json()
+                if response.status != 200:
+                    logger.error(f"API request failed with status {response.status}")
+                    return []
                 
-                if response.status == 200 and data.get('status') == 'success':
-                    # Filter articles to ensure they're about Dogecoin cryptocurrency
-                    filtered_articles = []
-                    for article in data.get('results', []):
-                        # Safely get text fields with empty string fallback
-                        title = article.get('title', '').lower() if article.get('title') else ''
-                        description = article.get('description', '').lower() if article.get('description') else ''
-                        content = article.get('content', '').lower() if article.get('content') else ''
+                try:
+                    data = await response.json()
+                except Exception as e:
+                    logger.error(f"Failed to parse API response: {e}")
+                    return []
+                
+                if data.get('status') != 'success':
+                    logger.error(f"API returned error status: {data.get('results', {}).get('message', 'Unknown error')}")
+                    return []
+                
+                # Filter articles to ensure they're about Dogecoin cryptocurrency
+                filtered_articles = []
+                results = data.get('results', [])
+                if not results:
+                    logger.info("No articles found in API response")
+                    return []
+                
+                for article in results:
+                    if not isinstance(article, dict):
+                        logger.warning(f"Skipping invalid article format: {type(article)}")
+                        continue
                         
-                        # Check if the article is specifically about Dogecoin cryptocurrency
-                        if ('dogecoin' in title or 'doge' in title):
-                            filtered_articles.append(article)
+                    # Safely get text fields with empty string fallback
+                    title = str(article.get('title', '')).lower()
+                    description = str(article.get('description', '')).lower()
                     
-                    logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin cryptocurrency articles from the last hour")
-                    return filtered_articles
+                    # Check if required fields exist
+                    if not article.get('title') or not article.get('link'):
+                        logger.warning("Skipping article missing required fields")
+                        continue
+                    
+                    # Check if the article is specifically about Dogecoin cryptocurrency
+                    if 'dogecoin' in title or 'doge' in title or 'dogecoin' in description:
+                        filtered_articles.append(article)
+                
+                logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin cryptocurrency articles from the last hour")
+                return filtered_articles
+                
+    except aiohttp.ClientError as e:
+        logger.error(f"Network error while fetching news: {e}")
         return []
     except Exception as e:
-        logger.error(f"Error fetching news: {e}")
+        logger.error(f"Unexpected error while fetching news: {e}")
         return []
 
 def format_price_message(price_data):
@@ -126,12 +153,21 @@ def format_price_message(price_data):
 
 def format_news_message(article):
     """Format a news article into a readable message."""
-    return (
-        f"📰 *{article['title']}*\n\n"
-        f"{article.get('description', 'No description available.')}\n\n"
-        f"🔗 [Read more]({article['link']})\n"
-        f"📅 Published: {article.get('pubDate', 'Date not available')}"
-    )
+    try:
+        title = str(article.get('title', 'No title available'))
+        description = str(article.get('description', 'No description available'))
+        link = str(article.get('link', ''))
+        pub_date = str(article.get('pubDate', 'Date not available'))
+        
+        return (
+            f"📰 *{title}*\n\n"
+            f"{description}\n\n"
+            f"🔗 [Read more]({link})\n"
+            f"📅 Published: {pub_date}"
+        )
+    except Exception as e:
+        logger.error(f"Error formatting news message: {e}")
+        return "Error formatting article"
 
 def start(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /start is issued."""
