@@ -79,7 +79,14 @@ async def fetch_dogecoin_news():
     """Fetch news about Dogecoin from NewsData.io."""
     try:
         logger.info("Fetching news from NewsData.io")
-        url = f"https://newsdata.io/api/1/news?apikey={NEWSDATA_API_KEY}&q=Dogecoin,DOGE,Doge&language=en"
+        # Calculate time 1 hour ago
+        one_hour_ago = (datetime.now() - timedelta(hours=1)).strftime('%Y-%m-%d-%H')
+        
+        url = (f"https://newsdata.io/api/1/news?"
+               f"apikey={NEWSDATA_API_KEY}"
+               f"&q=Dogecoin,DOGE,Doge"
+               f"&language=en"
+               f"&timeframe={one_hour_ago}")
         
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
@@ -88,19 +95,17 @@ async def fetch_dogecoin_news():
                 if response.status == 200 and data.get('status') == 'success':
                     # Filter articles to ensure they're about Dogecoin cryptocurrency
                     filtered_articles = []
-                    for article in data['results']:
-                        title = article.get('title', '').lower()
-                        description = article.get('description', '').lower()
-                        content = article.get('content', '').lower()
+                    for article in data.get('results', []):
+                        # Safely get text fields with empty string fallback
+                        title = article.get('title', '').lower() if article.get('title') else ''
+                        description = article.get('description', '').lower() if article.get('description') else ''
+                        content = article.get('content', '').lower() if article.get('content') else ''
                         
                         # Check if the article is specifically about Dogecoin cryptocurrency
-                        crypto_terms = ['crypto', 'cryptocurrency', 'blockchain', 'trading', 'price', 'market', 'wallet']
-                        if (('dogecoin' in title or 'doge' in title) and
-                            any(term in title.lower() or term in description.lower() or term in content.lower() 
-                                for term in crypto_terms)):
+                        if ('dogecoin' in title or 'doge' in title):
                             filtered_articles.append(article)
                     
-                    logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin cryptocurrency articles")
+                    logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin cryptocurrency articles from the last hour")
                     return filtered_articles
         return []
     except Exception as e:
@@ -253,10 +258,6 @@ async def send_updates():
         price_data = await get_dogecoin_price()
         articles = await fetch_dogecoin_news()
         
-        if not articles:
-            logger.info("No articles found for update")
-            return
-
         logger.info(f"Sending updates to {len(subscribed_users)} users")
         
         for chat_id in subscribed_users:
@@ -268,19 +269,29 @@ async def send_updates():
                     parse_mode='Markdown'
                 )
                 
-                bot.send_message(
-                    chat_id=chat_id,
-                    text="🔄 Here's your Dogecoin news update:"
-                )
-                
-                # Send the most recent news item
-                article = articles[0]
-                bot.send_message(
-                    chat_id=chat_id,
-                    text=format_news_message(article),
-                    parse_mode='Markdown',
-                    disable_web_page_preview=True
-                )
+                if articles:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text=f"🔄 Here are the Dogecoin news updates from the last hour ({len(articles)} articles found):"
+                    )
+                    
+                    # Send all articles from the last hour
+                    for article in articles:
+                        try:
+                            bot.send_message(
+                                chat_id=chat_id,
+                                text=format_news_message(article),
+                                parse_mode='Markdown',
+                                disable_web_page_preview=True
+                            )
+                        except Exception as e:
+                            logger.error(f"Error sending news article: {e}")
+                else:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text="No new Dogecoin news in the last hour."
+                    )
+                    
                 logger.info(f"Update sent to chat {chat_id}")
             except Exception as e:
                 logger.error(f"Error sending update to {chat_id}: {e}")
@@ -296,10 +307,11 @@ def main() -> None:
     try:
         # If running in GitHub Actions, just send updates and exit
         if os.getenv('GITHUB_ACTIONS'):
+            logger.info("Running in GitHub Actions - sending scheduled update")
             asyncio.run(send_updates())
             return
 
-        # Otherwise, run the bot normally
+        # Otherwise, run the bot normally for local testing
         updater = Updater(TELEGRAM_BOT_TOKEN)
         dispatcher = updater.dispatcher
 
