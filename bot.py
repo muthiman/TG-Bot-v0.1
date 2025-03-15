@@ -6,6 +6,8 @@ from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext
 import aiohttp
 import asyncio
+import signal
+import sys
 
 # Load environment variables
 load_dotenv()
@@ -425,6 +427,24 @@ def main() -> None:
             asyncio.run(send_updates())
             return
 
+        # Create pid file to prevent multiple instances
+        pid_file = 'bot.pid'
+        if os.path.exists(pid_file):
+            with open(pid_file, 'r') as f:
+                old_pid = int(f.read().strip())
+                try:
+                    # Check if process with this PID exists
+                    os.kill(old_pid, 0)
+                    logger.error(f"Bot is already running with PID {old_pid}")
+                    return
+                except OSError:
+                    # Process not found, we can continue
+                    pass
+        
+        # Write current PID
+        with open(pid_file, 'w') as f:
+            f.write(str(os.getpid()))
+
         # Otherwise, run the bot normally
         updater = Updater(TELEGRAM_BOT_TOKEN)
         dispatcher = updater.dispatcher
@@ -435,12 +455,34 @@ def main() -> None:
         dispatcher.add_handler(CommandHandler("price", price_command))
         dispatcher.add_handler(CommandHandler("stop", stop))
 
+        # Add error handler
+        def error_handler(update: Update, context: CallbackContext) -> None:
+            logger.error(f"Update {update} caused error {context.error}")
+            if update and update.effective_message:
+                update.effective_message.reply_text("Sorry, something went wrong. Please try again later.")
+
+        dispatcher.add_error_handler(error_handler)
+
         logger.info("Bot started successfully")
+        
+        def shutdown(signum, frame):
+            logger.info("Received shutdown signal")
+            updater.stop()
+            if os.path.exists(pid_file):
+                os.remove(pid_file)
+            logger.info("Bot shutdown complete")
+            sys.exit(0)
+
+        # Register shutdown handlers
+        signal.signal(signal.SIGTERM, shutdown)
+        signal.signal(signal.SIGINT, shutdown)
         
         updater.start_polling()
         updater.idle()
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
+        if os.path.exists(pid_file):
+            os.remove(pid_file)
 
 if __name__ == '__main__':
     if os.getenv('TEST_NEWS'):
