@@ -10,8 +10,8 @@ import asyncio
 # Load environment variables
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-COINMARKETCAP_API_KEY = "bd1eb80b-e7df-4547-85a4-9138db279efe"
-NEWSDATA_API_KEY = "pub_747026d7148da05676417a4f83d51505e3025"
+COINMARKETCAP_API_KEY = os.getenv('COINMARKETCAP_API_KEY', "bd1eb80b-e7df-4547-85a4-9138db279efe")
+NEWSDATA_API_KEY = os.getenv('NEWSDATA_API_KEY', "pub_747026d7148da05676417a4f83d51505e3025")
 
 # Configure logging
 logging.basicConfig(
@@ -37,6 +37,7 @@ def load_subscribed_users():
 def save_subscribed_users(users):
     """Save subscribed users to file."""
     try:
+        os.makedirs(os.path.dirname(SUBSCRIBED_USERS_FILE), exist_ok=True)
         with open(SUBSCRIBED_USERS_FILE, 'w') as f:
             for user_id in users:
                 f.write(f"{user_id}\n")
