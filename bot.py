@@ -79,57 +79,61 @@ async def fetch_dogecoin_news():
     """Fetch news about Dogecoin from NewsData.io."""
     try:
         logger.info("Fetching news from NewsData.io")
-        # Calculate time 1 hour ago
-        one_hour_ago = (datetime.now() - timedelta(hours=1)).strftime('%Y-%m-%d-%H')
         
         url = (f"https://newsdata.io/api/1/news?"
                f"apikey={NEWSDATA_API_KEY}"
-               f"&q=Dogecoin,DOGE,Doge"
-               f"&language=en"
-               f"&timeframe={one_hour_ago}")
+               f"&q=Dogecoin cryptocurrency OR DOGE crypto OR DOGE coin"  # More specific query
+               f"&language=en")
         
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as response:
                 if response.status != 200:
-                    logger.error(f"API request failed with status {response.status}")
+                    logger.error(f"NewsData.io API error: Status {response.status}")
+                    logger.error(f"Response: {await response.text()}")
                     return []
                 
                 try:
                     data = await response.json()
                 except Exception as e:
-                    logger.error(f"Failed to parse API response: {e}")
+                    logger.error(f"Failed to parse NewsData.io API response: {e}")
                     return []
                 
-                if data.get('status') != 'success':
-                    logger.error(f"API returned error status: {data.get('results', {}).get('message', 'Unknown error')}")
+                if not isinstance(data, dict) or data.get('status') != 'success':
+                    logger.error(f"Invalid response from NewsData.io API: {data}")
                     return []
                 
-                # Filter articles to ensure they're about Dogecoin cryptocurrency
-                filtered_articles = []
                 results = data.get('results', [])
-                if not results:
-                    logger.info("No articles found in API response")
+                if not isinstance(results, list):
+                    logger.error("Invalid results format from NewsData.io API")
                     return []
+                
+                filtered_articles = []
+                crypto_keywords = {'cryptocurrency', 'crypto', 'coin', 'token', 'blockchain', 'trading', 'price', 'market'}
                 
                 for article in results:
                     if not isinstance(article, dict):
-                        logger.warning(f"Skipping invalid article format: {type(article)}")
                         continue
-                        
-                    # Safely get text fields with empty string fallback
-                    title = str(article.get('title', '')).lower()
-                    description = str(article.get('description', '')).lower()
+                    
+                    # Safely get text fields
+                    title = str(article.get('title', '')).lower() if article.get('title') else ''
+                    description = str(article.get('description', '')).lower() if article.get('description') else ''
                     
                     # Check if required fields exist
                     if not article.get('title') or not article.get('link'):
-                        logger.warning("Skipping article missing required fields")
                         continue
                     
                     # Check if the article is specifically about Dogecoin cryptocurrency
-                    if 'dogecoin' in title or 'doge' in title or 'dogecoin' in description:
+                    is_about_doge = ('dogecoin' in title or 'dogecoin' in description)
+                    if not is_about_doge and ('doge' in title or 'doge' in description):
+                        # If just "doge" is mentioned, make sure it's in a crypto context
+                        content = f"{title} {description}"
+                        is_about_doge = any(keyword in content for keyword in crypto_keywords)
+                    
+                    if is_about_doge:
                         filtered_articles.append(article)
                 
-                logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin cryptocurrency articles from the last hour")
+                logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin cryptocurrency articles")
                 return filtered_articles
                 
     except aiohttp.ClientError as e:
@@ -153,21 +157,12 @@ def format_price_message(price_data):
 
 def format_news_message(article):
     """Format a news article into a readable message."""
-    try:
-        title = str(article.get('title', 'No title available'))
-        description = str(article.get('description', 'No description available'))
-        link = str(article.get('link', ''))
-        pub_date = str(article.get('pubDate', 'Date not available'))
-        
-        return (
-            f"📰 *{title}*\n\n"
-            f"{description}\n\n"
-            f"🔗 [Read more]({link})\n"
-            f"📅 Published: {pub_date}"
-        )
-    except Exception as e:
-        logger.error(f"Error formatting news message: {e}")
-        return "Error formatting article"
+    return (
+        f"📰 *{article['title']}*\n\n"
+        f"{article.get('description', 'No description available.')}\n\n"
+        f"🔗 [Read more]({article['link']})\n"
+        f"📅 Published: {article.get('pubDate', 'Date not available')}"
+    )
 
 def start(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /start is issued."""
@@ -294,6 +289,10 @@ async def send_updates():
         price_data = await get_dogecoin_price()
         articles = await fetch_dogecoin_news()
         
+        if not articles:
+            logger.info("No articles found for update")
+            return
+
         logger.info(f"Sending updates to {len(subscribed_users)} users")
         
         for chat_id in subscribed_users:
@@ -305,29 +304,19 @@ async def send_updates():
                     parse_mode='Markdown'
                 )
                 
-                if articles:
-                    bot.send_message(
-                        chat_id=chat_id,
-                        text=f"🔄 Here are the Dogecoin news updates from the last hour ({len(articles)} articles found):"
-                    )
-                    
-                    # Send all articles from the last hour
-                    for article in articles:
-                        try:
-                            bot.send_message(
-                                chat_id=chat_id,
-                                text=format_news_message(article),
-                                parse_mode='Markdown',
-                                disable_web_page_preview=True
-                            )
-                        except Exception as e:
-                            logger.error(f"Error sending news article: {e}")
-                else:
-                    bot.send_message(
-                        chat_id=chat_id,
-                        text="No new Dogecoin news in the last hour."
-                    )
-                    
+                bot.send_message(
+                    chat_id=chat_id,
+                    text="🔄 Here's your Dogecoin news update:"
+                )
+                
+                # Send the most recent news item
+                article = articles[0]
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=format_news_message(article),
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True
+                )
                 logger.info(f"Update sent to chat {chat_id}")
             except Exception as e:
                 logger.error(f"Error sending update to {chat_id}: {e}")
@@ -338,16 +327,28 @@ async def send_updates():
     except Exception as e:
         logger.error(f"Error in send_updates: {e}")
 
+async def test_news_fetch():
+    """Test function to fetch and print news articles."""
+    print("Testing news fetch...")
+    articles = await fetch_dogecoin_news()
+    print(f"\nFound {len(articles)} articles:")
+    for article in articles:
+        print("\n-------------------")
+        print(f"Title: {article.get('title')}")
+        print(f"Description: {article.get('description')}")
+        print(f"Link: {article.get('link')}")
+        print(f"Published: {article.get('pubDate')}")
+    return articles
+
 def main() -> None:
     """Start the bot."""
     try:
         # If running in GitHub Actions, just send updates and exit
         if os.getenv('GITHUB_ACTIONS'):
-            logger.info("Running in GitHub Actions - sending scheduled update")
             asyncio.run(send_updates())
             return
 
-        # Otherwise, run the bot normally for local testing
+        # Otherwise, run the bot normally
         updater = Updater(TELEGRAM_BOT_TOKEN)
         dispatcher = updater.dispatcher
 
@@ -365,4 +366,7 @@ def main() -> None:
         logger.error(f"Error starting bot: {e}")
 
 if __name__ == '__main__':
-    main() 
+    if os.getenv('TEST_NEWS'):
+        asyncio.run(test_news_fetch())
+    else:
+        main() 
