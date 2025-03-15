@@ -82,15 +82,20 @@ async def fetch_dogecoin_news():
         
         url = (f"https://newsdata.io/api/1/news?"
                f"apikey={NEWSDATA_API_KEY}"
-               f"&q=Dogecoin cryptocurrency OR DOGE crypto OR DOGE coin"  # More specific query
+               f"&q=Dogecoin"  # Simplified query
                f"&language=en")
         
+        logger.info(f"Making request to: {url}")
         timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as response:
+                response_text = await response.text()
+                logger.info(f"Response status: {response.status}")
+                logger.info(f"Response text: {response_text}")
+                
                 if response.status != 200:
                     logger.error(f"NewsData.io API error: Status {response.status}")
-                    logger.error(f"Response: {await response.text()}")
+                    logger.error(f"Response: {response_text}")
                     return []
                 
                 try:
@@ -132,6 +137,7 @@ async def fetch_dogecoin_news():
                     
                     if is_about_doge:
                         filtered_articles.append(article)
+                        logger.info(f"Found relevant article: {article['title']}")
                 
                 logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin cryptocurrency articles")
                 return filtered_articles
