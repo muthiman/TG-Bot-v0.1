@@ -265,13 +265,28 @@ def send_news(update: Update, context: CallbackContext) -> None:
         # Send up to 5 most recent news items
         for article in articles[:5]:
             try:
+                # Format the message with proper escaping for Markdown
+                title = article.get('title', '').replace('[', '\\[').replace('*', '\\*').replace('_', '\\_')
+                description = article.get('description', 'No description available.').replace('[', '\\[').replace('*', '\\*').replace('_', '\\_')
+                link = article.get('link', '')
+                pub_date = article.get('pubDate', 'Date not available')
+                
+                message = (
+                    f"📰 *{title}*\n\n"
+                    f"{description}\n\n"
+                    f"🔗 [Read more]({link})\n"
+                    f"📅 Published: {pub_date}"
+                )
+                
                 update.message.reply_text(
-                    format_news_message(article),
+                    message,
                     parse_mode='Markdown',
                     disable_web_page_preview=True
                 )
+                logger.info(f"Sent article: {title}")
             except Exception as e:
                 logger.error(f"Error sending news article: {e}")
+                continue
         
         logger.info(f"News sent to user {update.effective_user.id}")
     except Exception as e:
