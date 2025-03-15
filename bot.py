@@ -82,7 +82,7 @@ async def fetch_dogecoin_news():
         
         url = (f"https://newsdata.io/api/1/news?"
                f"apikey={NEWSDATA_API_KEY}"
-               f"&q=Dogecoin"  # Simplified query
+               f"&q=Dogecoin OR DOGE"  # Include both terms
                f"&language=en")
         
         logger.info(f"Making request to: {url}")
@@ -91,7 +91,6 @@ async def fetch_dogecoin_news():
             async with session.get(url) as response:
                 response_text = await response.text()
                 logger.info(f"Response status: {response.status}")
-                logger.info(f"Response text: {response_text}")
                 
                 if response.status != 200:
                     logger.error(f"NewsData.io API error: Status {response.status}")
@@ -120,24 +119,28 @@ async def fetch_dogecoin_news():
                     if not isinstance(article, dict):
                         continue
                     
-                    # Safely get text fields
-                    title = str(article.get('title', '')).lower() if article.get('title') else ''
-                    description = str(article.get('description', '')).lower() if article.get('description') else ''
+                    # Get the original text fields without converting to lowercase
+                    title = article.get('title', '')
+                    description = article.get('description', '')
                     
                     # Check if required fields exist
-                    if not article.get('title') or not article.get('link'):
+                    if not title or not article.get('link'):
                         continue
                     
+                    # Convert to lowercase only for comparison
+                    title_lower = title.lower()
+                    description_lower = description.lower() if description else ''
+                    
                     # Check if the article is specifically about Dogecoin cryptocurrency
-                    is_about_doge = ('dogecoin' in title or 'dogecoin' in description)
-                    if not is_about_doge and ('doge' in title or 'doge' in description):
-                        # If just "doge" is mentioned, make sure it's in a crypto context
-                        content = f"{title} {description}"
-                        is_about_doge = any(keyword in content for keyword in crypto_keywords)
+                    is_about_doge = ('dogecoin' in title_lower or 'dogecoin' in description_lower or
+                                   'doge' in title_lower or 'doge' in description_lower)
                     
                     if is_about_doge:
-                        filtered_articles.append(article)
-                        logger.info(f"Found relevant article: {article['title']}")
+                        # If it mentions DOGE/Dogecoin, make sure it's in a crypto context
+                        content = f"{title_lower} {description_lower}"
+                        if any(keyword in content for keyword in crypto_keywords):
+                            filtered_articles.append(article)
+                            logger.info(f"Found relevant article: {title}")
                 
                 logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin cryptocurrency articles")
                 return filtered_articles
@@ -255,6 +258,7 @@ def send_news(update: Update, context: CallbackContext) -> None:
         
         # Then send news
         articles = asyncio.run(fetch_dogecoin_news())
+        logger.info(f"Fetched {len(articles)} articles")
         
         if not articles:
             update.message.reply_text(
@@ -263,6 +267,7 @@ def send_news(update: Update, context: CallbackContext) -> None:
             return
 
         # Send up to 5 most recent news items
+        sent_count = 0
         for article in articles[:5]:
             try:
                 # Format the message with proper escaping for Markdown
@@ -285,7 +290,8 @@ def send_news(update: Update, context: CallbackContext) -> None:
                     parse_mode='Markdown',
                     disable_web_page_preview=True
                 )
-                logger.info(f"Sent article: {title}")
+                sent_count += 1
+                logger.info(f"Sent article {sent_count}: {title}")
             except Exception as e:
                 logger.error(f"Error sending news article: {e}")
                 # If Markdown parsing fails, try sending without formatting
@@ -300,12 +306,17 @@ def send_news(update: Update, context: CallbackContext) -> None:
                         simple_message,
                         disable_web_page_preview=True
                     )
-                    logger.info(f"Sent article without formatting: {article.get('title', '')}")
+                    sent_count += 1
+                    logger.info(f"Sent article {sent_count} without formatting: {article.get('title', '')}")
                 except Exception as e2:
                     logger.error(f"Error sending unformatted article: {e2}")
                 continue
         
-        logger.info(f"News sent to user {update.effective_user.id}")
+        if sent_count > 0:
+            logger.info(f"Successfully sent {sent_count} articles to user {update.effective_user.id}")
+        else:
+            update.message.reply_text("Sorry, I had trouble formatting the news articles. Please try again later.")
+            
     except Exception as e:
         logger.error(f"Error in news command: {e}")
         update.message.reply_text("Sorry, something went wrong. Please try again later.")
