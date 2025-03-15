@@ -41,6 +41,14 @@ A Telegram bot that provides real-time updates about Dogecoin price and news. Th
 
 The bot will now run automatically every 30 minutes and send updates to all subscribed users.
 
+## Testing the Bot
+
+1. Find your bot on Telegram (using the username you gave it)
+2. Send `/start` to subscribe to updates
+3. Try `/price` to get current Dogecoin price
+4. Try `/news` to get latest news
+5. You'll receive automatic updates every 30 minutes
+
 ## How It Works
 
 - The bot uses GitHub Actions to run every 30 minutes
@@ -49,6 +57,14 @@ The bot will now run automatically every 30 minutes and send updates to all subs
   1. Fetches the latest Dogecoin price from CoinMarketCap
   2. Fetches the latest news from NewsData.io
   3. Sends updates to all subscribed users
+
+## Troubleshooting
+
+If the bot doesn't respond:
+1. Check the Actions tab in GitHub for any error messages
+2. Verify your bot token is correctly set in GitHub Secrets
+3. Make sure you've enabled GitHub Actions
+4. Try sending `/start` to the bot again
 
 ## Contributing
 
