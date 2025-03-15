@@ -113,7 +113,6 @@ async def fetch_dogecoin_news():
                     return []
                 
                 filtered_articles = []
-                crypto_keywords = {'cryptocurrency', 'crypto', 'coin', 'token', 'blockchain', 'trading', 'price', 'market'}
                 
                 for article in results:
                     if not isinstance(article, dict):
@@ -131,18 +130,13 @@ async def fetch_dogecoin_news():
                     title_lower = title.lower()
                     description_lower = description.lower() if description else ''
                     
-                    # Check if the article is specifically about Dogecoin cryptocurrency
-                    is_about_doge = ('dogecoin' in title_lower or 'dogecoin' in description_lower or
-                                   'doge' in title_lower or 'doge' in description_lower)
-                    
-                    if is_about_doge:
-                        # If it mentions DOGE/Dogecoin, make sure it's in a crypto context
-                        content = f"{title_lower} {description_lower}"
-                        if any(keyword in content for keyword in crypto_keywords):
-                            filtered_articles.append(article)
-                            logger.info(f"Found relevant article: {title}")
+                    # Check if the article mentions Dogecoin or DOGE
+                    if ('dogecoin' in title_lower or 'dogecoin' in description_lower or
+                        'doge' in title_lower or 'doge' in description_lower):
+                        filtered_articles.append(article)
+                        logger.info(f"Found relevant article: {title}")
                 
-                logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin cryptocurrency articles")
+                logger.info(f"Successfully fetched {len(filtered_articles)} Dogecoin articles")
                 return filtered_articles
                 
     except aiohttp.ClientError as e:
@@ -270,52 +264,28 @@ def send_news(update: Update, context: CallbackContext) -> None:
         sent_count = 0
         for article in articles[:5]:
             try:
-                # Format the message with proper escaping for Markdown
-                title = article.get('title', '').replace('[', '\\[').replace(']', '\\]').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
-                description = article.get('description', 'No description available.')
-                if description:
-                    description = description.replace('[', '\\[').replace(']', '\\]').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
-                link = article.get('link', '').replace(')', '\\)').replace('(', '\\(')
-                pub_date = article.get('pubDate', 'Date not available')
-                
+                # Simple message format without complex Markdown
                 message = (
-                    f"📰 *{title}*\n\n"
-                    f"{description}\n\n"
-                    f"🔗 [Read more]({link})\n"
-                    f"📅 Published: {pub_date}"
+                    f"📰 {article.get('title', '')}\n\n"
+                    f"{article.get('description', 'No description available.')}\n\n"
+                    f"🔗 {article.get('link', '')}\n"
+                    f"📅 Published: {article.get('pubDate', 'Date not available')}"
                 )
                 
                 update.message.reply_text(
                     message,
-                    parse_mode='Markdown',
                     disable_web_page_preview=True
                 )
                 sent_count += 1
-                logger.info(f"Sent article {sent_count}: {title}")
+                logger.info(f"Sent article {sent_count}: {article.get('title', '')}")
             except Exception as e:
                 logger.error(f"Error sending news article: {e}")
-                # If Markdown parsing fails, try sending without formatting
-                try:
-                    simple_message = (
-                        f"📰 {article.get('title', '')}\n\n"
-                        f"{article.get('description', 'No description available.')}\n\n"
-                        f"🔗 {article.get('link', '')}\n"
-                        f"📅 Published: {article.get('pubDate', 'Date not available')}"
-                    )
-                    update.message.reply_text(
-                        simple_message,
-                        disable_web_page_preview=True
-                    )
-                    sent_count += 1
-                    logger.info(f"Sent article {sent_count} without formatting: {article.get('title', '')}")
-                except Exception as e2:
-                    logger.error(f"Error sending unformatted article: {e2}")
                 continue
         
         if sent_count > 0:
             logger.info(f"Successfully sent {sent_count} articles to user {update.effective_user.id}")
         else:
-            update.message.reply_text("Sorry, I had trouble formatting the news articles. Please try again later.")
+            update.message.reply_text("Sorry, I had trouble sending the news articles. Please try again later.")
             
     except Exception as e:
         logger.error(f"Error in news command: {e}")
