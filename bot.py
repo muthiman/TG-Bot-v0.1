@@ -8,9 +8,6 @@ import aiohttp
 import asyncio
 import signal
 import sys
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-import pytz
 
 # Load environment variables
 load_dotenv()
@@ -180,7 +177,7 @@ def format_news_message(article):
         f"📅 Published: {article.get('pubDate', 'Date not available')}"
     )
 
-def start(update: Update, context: CallbackContext) -> None:
+async def start(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /start is issued."""
     try:
         logger.info(f"Start command received from user {update.effective_user.id}")
@@ -195,13 +192,13 @@ def start(update: Update, context: CallbackContext) -> None:
         subscribed_users.add(update.effective_chat.id)
         save_subscribed_users(subscribed_users)
         
-        update.message.reply_text(welcome_message)
+        await update.message.reply_text(welcome_message)
         logger.info(f"Welcome message sent to user {update.effective_user.id}")
     except Exception as e:
         logger.error(f"Error in start command: {e}")
-        update.message.reply_text("Sorry, something went wrong. Please try again later.")
+        await update.message.reply_text("Sorry, something went wrong. Please try again later.")
 
-def help_command(update: Update, context: CallbackContext) -> None:
+async def help_command(update: Update, context: CallbackContext) -> None:
     """Send a message when the command /help is issued."""
     try:
         logger.info(f"Help command received from user {update.effective_user.id}")
@@ -213,13 +210,13 @@ def help_command(update: Update, context: CallbackContext) -> None:
             "/price - Get current Dogecoin price\n"
             "/stop - Unsubscribe from updates"
         )
-        update.message.reply_text(help_text)
+        await update.message.reply_text(help_text)
         logger.info(f"Help message sent to user {update.effective_user.id}")
     except Exception as e:
         logger.error(f"Error in help command: {e}")
-        update.message.reply_text("Sorry, something went wrong. Please try again later.")
+        await update.message.reply_text("Sorry, something went wrong. Please try again later.")
 
-def stop(update: Update, context: CallbackContext) -> None:
+async def stop(update: Update, context: CallbackContext) -> None:
     """Unsubscribe from updates."""
     try:
         logger.info(f"Stop command received from user {update.effective_user.id}")
@@ -227,20 +224,20 @@ def stop(update: Update, context: CallbackContext) -> None:
         subscribed_users.discard(update.effective_chat.id)
         save_subscribed_users(subscribed_users)
         
-        update.message.reply_text("You've been unsubscribed from Dogecoin updates. Send /start to subscribe again.")
+        await update.message.reply_text("You've been unsubscribed from Dogecoin updates. Send /start to subscribe again.")
         logger.info(f"User {update.effective_user.id} unsubscribed")
     except Exception as e:
         logger.error(f"Error in stop command: {e}")
-        update.message.reply_text("Sorry, something went wrong. Please try again later.")
+        await update.message.reply_text("Sorry, something went wrong. Please try again later.")
 
-def price_command(update: Update, context: CallbackContext) -> None:
+async def price_command(update: Update, context: CallbackContext) -> None:
     """Send current Dogecoin price information."""
     try:
         logger.info(f"Price command received from user {update.effective_user.id}")
-        update.message.reply_text("🔍 Fetching latest Dogecoin price...")
+        message = await update.message.reply_text("🔍 Fetching latest Dogecoin price...")
         
-        price_data = asyncio.run(get_dogecoin_price())
-        update.message.reply_text(
+        price_data = await get_dogecoin_price()
+        await message.edit_text(
             format_price_message(price_data),
             parse_mode='Markdown'
         )
@@ -248,21 +245,21 @@ def price_command(update: Update, context: CallbackContext) -> None:
         logger.info(f"Price info sent to user {update.effective_user.id}")
     except Exception as e:
         logger.error(f"Error in price command: {e}")
-        update.message.reply_text("Sorry, something went wrong. Please try again later.")
+        await update.message.reply_text("Sorry, something went wrong. Please try again later.")
 
-def send_news(update: Update, context: CallbackContext) -> None:
+async def send_news(update: Update, context: CallbackContext) -> None:
     """Send latest Dogecoin news when the command /news is issued."""
     try:
         logger.debug(f"Starting news command for user {update.effective_user.id}")
-        update.message.reply_text("🔍 Fetching latest Dogecoin news...")
+        message = await update.message.reply_text("🔍 Fetching latest Dogecoin news...")
         
         # First send price update
         logger.debug("Fetching price data...")
-        price_data = asyncio.run(get_dogecoin_price())
+        price_data = await get_dogecoin_price()
         if price_data:
             logger.debug(f"Price data received: {price_data}")
             try:
-                update.message.reply_text(
+                await update.message.reply_text(
                     format_price_message(price_data),
                     parse_mode='Markdown'
                 )
@@ -272,31 +269,20 @@ def send_news(update: Update, context: CallbackContext) -> None:
         
         # Then send news
         logger.debug("Fetching news articles...")
-        articles = asyncio.run(fetch_dogecoin_news())
+        articles = await fetch_dogecoin_news()
         logger.debug(f"Fetched {len(articles)} articles")
         
         if not articles:
             logger.error("No articles found in the API response")
-            update.message.reply_text(
+            await message.edit_text(
                 "Sorry, I couldn't find any recent news about Dogecoin. Please try again later."
             )
             return
-
-        # Log the articles we're about to send
-        logger.debug("Articles to be sent:")
-        for idx, article in enumerate(articles[:5]):
-            logger.debug(f"Article {idx + 1}:")
-            logger.debug(f"  Title: {article.get('title')}")
-            logger.debug(f"  Link: {article.get('link')}")
-            logger.debug(f"  Description: {article.get('description')}")
 
         # Send up to 5 most recent news items
         sent_count = 0
         for article in articles[:5]:
             try:
-                logger.debug(f"Preparing to send article: {article.get('title')}")
-                
-                # First try with Markdown formatting
                 title = article.get('title', '').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
                 description = article.get('description', 'No description available.')
                 if description:
@@ -304,23 +290,20 @@ def send_news(update: Update, context: CallbackContext) -> None:
                 link = article.get('link', '')
                 pub_date = article.get('pubDate', 'Date not available')
                 
-                message = (
+                news_message = (
                     f"📰 *{title}*\n\n"
                     f"{description}\n\n"
                     f"🔗 {link}\n"
                     f"📅 Published: {pub_date}"
                 )
                 
-                logger.debug(f"Attempting to send message with Markdown:\n{message}")
                 try:
-                    sent = update.message.reply_text(
-                        message,
+                    await update.message.reply_text(
+                        news_message,
                         parse_mode='Markdown',
                         disable_web_page_preview=True
                     )
-                    if sent:
-                        sent_count += 1
-                        logger.debug(f"Successfully sent article {sent_count} with Markdown")
+                    sent_count += 1
                 except Exception as md_error:
                     logger.error(f"Failed to send with Markdown: {str(md_error)}")
                     # If Markdown fails, send without formatting
@@ -330,29 +313,27 @@ def send_news(update: Update, context: CallbackContext) -> None:
                         f"🔗 {article.get('link', '')}\n"
                         f"📅 Published: {article.get('pubDate', 'Date not available')}"
                     )
-                    logger.debug(f"Attempting to send message without formatting:\n{simple_message}")
-                    sent = update.message.reply_text(
+                    await update.message.reply_text(
                         simple_message,
                         disable_web_page_preview=True
                     )
-                    if sent:
-                        sent_count += 1
-                        logger.debug(f"Successfully sent article {sent_count} without formatting")
+                    sent_count += 1
             except Exception as e:
                 logger.error(f"Error sending news article: {str(e)}")
                 continue
         
         if sent_count > 0:
             logger.info(f"Successfully sent {sent_count} articles to user {update.effective_user.id}")
+            await message.delete()
         else:
             logger.error("Failed to send any articles despite having them")
-            update.message.reply_text(
+            await message.edit_text(
                 "Sorry, I had trouble sending the news articles. Please try again later."
             )
             
     except Exception as e:
         logger.error(f"Error in news command: {str(e)}")
-        update.message.reply_text("Sorry, something went wrong. Please try again later.")
+        await update.message.reply_text("Sorry, something went wrong. Please try again later.")
 
 async def send_updates():
     """Send updates to all subscribed users."""
@@ -448,26 +429,18 @@ def main() -> None:
         with open(pid_file, 'w') as f:
             f.write(str(os.getpid()))
 
-        # Set up the scheduler with UTC timezone
-        scheduler = BackgroundScheduler(timezone='UTC')
-        scheduler.add_job(
-            lambda: asyncio.run(send_updates()),
-            trigger=IntervalTrigger(hours=1),
-            id='news_updates',
-            name='Hourly news updates',
-            next_run_time=datetime.now(pytz.UTC) + timedelta(minutes=1)  # First run in 1 minute
-        )
-        scheduler.start()
-        logger.info("Scheduler started - Updates will run every hour")
+        # Create event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-        # Otherwise, run the bot normally
+        # Set up the bot
         updater = Updater(TELEGRAM_BOT_TOKEN)
         dispatcher = updater.dispatcher
 
-        # Configure update parameters
-        updater.bot.delete_webhook()  # Ensure no webhook is configured
-        updater._clean_updates()  # Clean any pending updates
+        # Ensure no webhook is configured
+        updater.bot.delete_webhook()
 
+        # Add command handlers
         dispatcher.add_handler(CommandHandler("start", start))
         dispatcher.add_handler(CommandHandler("help", help_command))
         dispatcher.add_handler(CommandHandler("news", send_news))
@@ -475,18 +448,15 @@ def main() -> None:
         dispatcher.add_handler(CommandHandler("stop", stop))
 
         # Add error handler
-        def error_handler(update: Update, context: CallbackContext) -> None:
+        async def error_handler(update: Update, context: CallbackContext) -> None:
             logger.error(f"Update {update} caused error {context.error}")
             if update and update.effective_message:
-                update.effective_message.reply_text("Sorry, something went wrong. Please try again later.")
+                await update.effective_message.reply_text("Sorry, something went wrong. Please try again later.")
 
         dispatcher.add_error_handler(error_handler)
 
-        logger.info("Bot started successfully")
-        
         def shutdown(signum, frame):
             logger.info("Received shutdown signal")
-            scheduler.shutdown()  # Shut down the scheduler
             updater.stop()
             if os.path.exists(pid_file):
                 os.remove(pid_file)
@@ -496,10 +466,28 @@ def main() -> None:
         # Register shutdown handlers
         signal.signal(signal.SIGTERM, shutdown)
         signal.signal(signal.SIGINT, shutdown)
-        
-        # Start the bot with a clean state
-        updater.start_polling(clean=True)
-        updater.idle()
+
+        async def run_bot():
+            # Start the bot
+            updater.start_polling(drop_pending_updates=True)
+            
+            # Run hourly updates
+            while True:
+                try:
+                    await send_updates()
+                except Exception as e:
+                    logger.error(f"Error in hourly update: {e}")
+                await asyncio.sleep(3600)
+
+        # Run everything in the event loop
+        try:
+            logger.info("Bot starting...")
+            loop.run_until_complete(run_bot())
+        finally:
+            loop.close()
+            if os.path.exists(pid_file):
+                os.remove(pid_file)
+
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
         if os.path.exists(pid_file):
