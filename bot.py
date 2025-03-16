@@ -10,6 +10,7 @@ import signal
 import sys
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+import pytz
 
 # Load environment variables
 load_dotenv()
@@ -447,14 +448,14 @@ def main() -> None:
         with open(pid_file, 'w') as f:
             f.write(str(os.getpid()))
 
-        # Set up the scheduler
-        scheduler = BackgroundScheduler()
+        # Set up the scheduler with UTC timezone
+        scheduler = BackgroundScheduler(timezone='UTC')
         scheduler.add_job(
             lambda: asyncio.run(send_updates()),
             trigger=IntervalTrigger(hours=1),
             id='news_updates',
             name='Hourly news updates',
-            next_run_time=datetime.now() + timedelta(minutes=1)  # First run in 1 minute
+            next_run_time=datetime.now(pytz.UTC) + timedelta(minutes=1)  # First run in 1 minute
         )
         scheduler.start()
         logger.info("Scheduler started - Updates will run every hour")
