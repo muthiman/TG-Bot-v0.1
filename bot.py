@@ -8,6 +8,8 @@ import aiohttp
 import asyncio
 import signal
 import sys
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 # Load environment variables
 load_dotenv()
@@ -436,7 +438,7 @@ def main() -> None:
                     # Check if process with this PID exists
                     os.kill(old_pid, 0)
                     logger.error(f"Bot is already running with PID {old_pid}")
-                    return
+                    sys.exit(1)  # Exit if another instance is running
                 except OSError:
                     # Process not found, we can continue
                     pass
@@ -445,9 +447,25 @@ def main() -> None:
         with open(pid_file, 'w') as f:
             f.write(str(os.getpid()))
 
+        # Set up the scheduler
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(
+            lambda: asyncio.run(send_updates()),
+            trigger=IntervalTrigger(hours=1),
+            id='news_updates',
+            name='Hourly news updates',
+            next_run_time=datetime.now() + timedelta(minutes=1)  # First run in 1 minute
+        )
+        scheduler.start()
+        logger.info("Scheduler started - Updates will run every hour")
+
         # Otherwise, run the bot normally
         updater = Updater(TELEGRAM_BOT_TOKEN)
         dispatcher = updater.dispatcher
+
+        # Configure update parameters
+        updater.bot.delete_webhook()  # Ensure no webhook is configured
+        updater._clean_updates()  # Clean any pending updates
 
         dispatcher.add_handler(CommandHandler("start", start))
         dispatcher.add_handler(CommandHandler("help", help_command))
@@ -467,6 +485,7 @@ def main() -> None:
         
         def shutdown(signum, frame):
             logger.info("Received shutdown signal")
+            scheduler.shutdown()  # Shut down the scheduler
             updater.stop()
             if os.path.exists(pid_file):
                 os.remove(pid_file)
@@ -477,12 +496,14 @@ def main() -> None:
         signal.signal(signal.SIGTERM, shutdown)
         signal.signal(signal.SIGINT, shutdown)
         
-        updater.start_polling()
+        # Start the bot with a clean state
+        updater.start_polling(clean=True)
         updater.idle()
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
         if os.path.exists(pid_file):
             os.remove(pid_file)
+        sys.exit(1)  # Exit with error code
 
 if __name__ == '__main__':
     if os.getenv('TEST_NEWS'):
